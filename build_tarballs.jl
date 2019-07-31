@@ -9,26 +9,20 @@
 using BinaryBuilder
 
 # Collection of sources required to build LLVM
-llvm_ver = "6.0.1"
+llvm_ver = "8.0.1"
 sources = [
-    "http://releases.llvm.org/$(llvm_ver)/llvm-$(llvm_ver).src.tar.xz" =>
-    "b6d6c324f9c71494c0ccaf3dac1f16236d970002b42bb24a6c9e1634f7d0f4e2",
-    "http://releases.llvm.org/$(llvm_ver)/cfe-$(llvm_ver).src.tar.xz" =>
-    "7c243f1485bddfdfedada3cd402ff4792ea82362ff91fbdac2dae67c6026b667",
-    "http://releases.llvm.org/$(llvm_ver)/compiler-rt-$(llvm_ver).src.tar.xz" =>
-    "f4cd1e15e7d5cb708f9931d4844524e4904867240c306b06a4287b22ac1c99b9",
-    #"http://releases.llvm.org/$(llvm_ver)/lldb-$(llvm_ver).src.tar.xz" =>
-    #"",
-    "http://releases.llvm.org/$(llvm_ver)/libcxx-$(llvm_ver).src.tar.xz" =>
-    "7654fbc810a03860e6f01a54c2297a0b9efb04c0b9aa0409251d9bdb3726fc67",
-    "http://releases.llvm.org/$(llvm_ver)/libcxxabi-$(llvm_ver).src.tar.xz" =>
-    "209f2ec244a8945c891f722e9eda7c54a5a7048401abd62c62199f3064db385f",
-    "http://releases.llvm.org/$(llvm_ver)/polly-$(llvm_ver).src.tar.xz" =>
-    "e7765fdf6c8c102b9996dbb46e8b3abc41396032ae2315550610cf5a1ecf4ecc",
-    "http://releases.llvm.org/$(llvm_ver)/libunwind-$(llvm_ver).src.tar.xz" =>
-    "a8186c76a16298a0b7b051004d0162032b9b111b857fbd939d71b0930fd91b96",
-    "http://releases.llvm.org/$(llvm_ver)/lld-$(llvm_ver).src.tar.xz" =>
-    "e706745806921cea5c45700e13ebe16d834b5e3c0b7ad83bf6da1f28b0634e11",
+    "https://github.com/llvm/llvm-project/releases/download/llvmorg-$(llvm_ver)/llvm-$(llvm_ver).src.tar.xz" =>
+    "44787a6d02f7140f145e2250d56c9f849334e11f9ae379827510ed72f12b75e7",
+    "https://github.com/llvm/llvm-project/releases/download/llvmorg-$(llvm_ver)/cfe-$(llvm_ver).src.tar.xz" =>
+    "70effd69f7a8ab249f66b0a68aba8b08af52aa2ab710dfb8a0fba102685b1646",
+    "https://github.com/llvm/llvm-project/releases/download/llvmorg-$(llvm_ver)/compiler-rt-$(llvm_ver).src.tar.xz" =>
+    "11828fb4823387d820c6715b25f6b2405e60837d12a7469e7a8882911c721837",
+    "https://github.com/llvm/llvm-project/releases/download/llvmorg-$(llvm_ver)/polly-$(llvm_ver).src.tar.xz" =>
+    "e8a1f7e8af238b32ce39ab5de1f3317a2e3f7d71a8b1b8bbacbd481ac76fd2d1",
+    "https://github.com/llvm/llvm-project/releases/download/llvmorg-$(llvm_ver)/libunwind-$(llvm_ver).src.tar.xz" =>
+    "1870161dda3172c63e632c1f60624564e1eb0f9233cfa8f040748ca5ff630f6e",
+    "https://github.com/llvm/llvm-project/releases/download/llvmorg-$(llvm_ver)/lld-$(llvm_ver).src.tar.xz" =>
+    "9fba1e94249bd7913e8a6c3aadcb308b76c8c3d83c5ce36c99c3f34d73873d88",
 
     # Include our LLVM patches
     "patches",
@@ -81,7 +75,7 @@ done
 script = script_setup * raw"""
 # Build llvm-tblgen, clang-tblgen, and llvm-config
 mkdir build && cd build
-CMAKE_FLAGS="-DLLVM_TARGETS_TO_BUILD:STRING=host"
+CMAKE_FLAGS="-DLLVM_TARGETS_TO_BUILD:STRING=host -DLLVM_TEMPORARILY_ALLOW_OLD_TOOLCHAIN:BOOL=ON"
 cmake .. ${CMAKE_FLAGS}
 make -j${nproc} llvm-tblgen clang-tblgen llvm-config
 
@@ -128,7 +122,7 @@ if !isfile(tblgen_tarball)
     tblgen_tarball, tblgen_hash = product_hashes["x86_64-linux-musl"]
     tblgen_tarball = joinpath("products", tblgen_tarball)
 else
-    info("Using pre-built tblgen tarball at $(tblgen_tarball)")
+    @info("Using pre-built tblgen tarball at $(tblgen_tarball)")
     using SHA: sha256
     tblgen_hash = open(tblgen_tarball) do f
         bytes2hex(sha256(f))
@@ -157,6 +151,9 @@ if [[ "${CHECK}" == "0" ]]; then
     # Start the cmake flags off with building for both our host arch, NVidia and AMD
     CMAKE_FLAGS="${CMAKE_FLAGS} -DLLVM_TARGETS_TO_BUILD:STRING=\"host\;NVPTX\;AMDGPU\""
 fi
+
+# Allow us to build with GCC 4.X for at least a little while longer
+CMAKE_FLAGS="${CMAKE_FLAGS} -DLLVM_TEMPORARILY_ALLOW_OLD_TOOLCHAIN:BOOL=ON"
 
 # Also target Wasm because Javascript is the Platform Of The Future (TM)
 # Actually, turn this off because we need it to work with The Julia Of Today (TM)
@@ -256,6 +253,9 @@ fi
 if [[ "${target}" == *apple* ]] || [[ "${target}" == *freebsd* ]]; then
     # On clang-based platforms we need to override the check for ffs because it doesn't work with `clang`.
     export ac_cv_have_decl___builtin_ffs=yes
+
+    # We don't use X-ray on BSD systems
+    CMAKE_FLAGS="${CMAKE_FLAGS} -DCOMPILER_RT_BUILD_XRAY=OFF"
 fi
 
 if [[ "${target}" == *mingw* ]]; then
@@ -319,12 +319,12 @@ cp -r ../utils/lit ${prefix}/tools/
 # Lots of tools don't respect `$DSYMUTIL` and so thus do not find 
 # our cleverly-named `llvm-dsymutil`.  We create a symlink to help
 # Those poor fools along:
-ln -s llvm-dsymutil ${prefix}/tools/dsymutil
+#ln -s llvm-dsymutil ${prefix}/tools/dsymutil
 """
 
 if "--llvm-check" in llvm_ARGS
    # BB is using musl as a platform and we don't want to run glibc binaries on it.
-   info("Restricting build to `x86_64-linux-musl`")
+   @info("Restricting build to `x86_64-linux-musl`")
    platforms = [
         BinaryProvider.Linux(:x86_64, :musl)
    ]
@@ -368,7 +368,7 @@ name = "LLVM"
 if "--llvm-asserts" in llvm_ARGS
     config *= "ASSERTS=1\n"
     name *= ".asserts"
-    warn("Removing PPC64LE from the platform list")
+    @warn("Removing PPC64LE from the platform list")
     filter!(p-> p.arch != :powerpc64le, platforms)
 else
     config *= "ASSERTS=0\n"
